@@ -5,6 +5,8 @@
 #include <memory>
 #include "json/json.hpp"
 
+const float THRESHOLD = 0.5;
+
 std::string CaptureScreenshot(CGDirectDisplayID displayId, int screenNumber) {
     // Capture the screenshot of the specific display
     CGImageRef screenshot = CGDisplayCreateImage(displayId);
@@ -102,9 +104,9 @@ int main() {
 
             if (label == "hentai" || label == "sexy" || label == "porn") {
 
-                std::cout << "Category: " << label << ", Probability: " << prob << std::endl;
+                //std::cout << "Category: " << label << ", Probability: " << prob << std::endl;
 
-                if (prob > 0.5 || hasNudity) {
+                if (prob > THRESHOLD || hasNudity) {
                     std::cout << "Sending request to submit image" << std::endl;
                 }
             }
