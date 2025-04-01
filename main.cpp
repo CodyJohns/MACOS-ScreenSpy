@@ -1,13 +1,16 @@
 #include <ApplicationServices/ApplicationServices.h>
 #include <iostream>
 #include <sstream>
+#include <cstdio>
+#include <memory>
+#include "json/json.hpp"
 
-void CaptureScreenshot(CGDirectDisplayID displayId, int screenNumber) {
+std::string CaptureScreenshot(CGDirectDisplayID displayId, int screenNumber) {
     // Capture the screenshot of the specific display
     CGImageRef screenshot = CGDisplayCreateImage(displayId);
     if (!screenshot) {
         std::cerr << "Failed to capture screenshot for display " << screenNumber << "!" << std::endl;
-        return;
+        return "";
     }
 
     // Generate filename dynamically
@@ -25,22 +28,29 @@ void CaptureScreenshot(CGDirectDisplayID displayId, int screenNumber) {
         CGImageRelease(screenshot);
         CFRelease(path);
         CFRelease(url);
-        return;
+        return "";
     }
 
     // Write image to file
     CGImageDestinationAddImage(destination, screenshot, NULL);
     if (!CGImageDestinationFinalize(destination)) {
         std::cerr << "Failed to save screenshot for display " << screenNumber << "!" << std::endl;
-    } else {
+        CFRelease(destination);
+        CGImageRelease(screenshot);
+        CFRelease(path);
+        CFRelease(url);
+        return "";
+    }/* else {
         std::cout << "Screenshot saved as " << filename.str() << std::endl;
-    }
+    }*/
 
     // Cleanup
     CFRelease(destination);
     CGImageRelease(screenshot);
     CFRelease(path);
     CFRelease(url);
+
+    return filename.str();
 }
 
 int main() {
@@ -50,11 +60,55 @@ int main() {
 
     // Get list of active displays
     CGGetActiveDisplayList(MAX_DISPLAYS, displays, &displayCount);
-    std::cout << "Number of screens detected: " << displayCount << std::endl;
+    //std::cout << "Number of screens detected: " << displayCount << std::endl;
+
+    std::vector<std::string> imagePaths;
 
     // Capture each display
     for (uint32_t i = 0; i < displayCount; ++i) {
-        CaptureScreenshot(displays[i], i + 1);
+        std::string savedPath = CaptureScreenshot(displays[i], i + 1);
+
+        if (!savedPath.empty()) {
+            imagePaths.push_back(savedPath);
+        }
+    }
+
+    for (uint32 i = 0; i < imagePaths.size(); i++) {
+        std::string command = "./bonk/bonk -t 0.5 ./" + imagePaths[i];
+
+        std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
+        if (!pipe) {
+            std::cerr << "popen() failed!" << std::endl;
+            return 1;
+        }
+        
+        std::string result;
+        char buffer[128];
+        while (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr) {
+            result += buffer;
+        }
+
+        size_t offset = 0;
+        json::JSON response = json::parse_object(result, offset);
+
+        bool hasNudity = response.at("has_nudity").ToBool();
+
+        json::JSON categories = response.at("predictions");
+
+        for (const auto& category : categories.ArrayRange()) {
+
+            std::string label = category.at("category").ToString();
+            float prob = category.at("probability").ToFloat();
+
+            if (label == "hentai" || label == "sexy" || label == "porn") {
+
+                std::cout << "Category: " << label << ", Probability: " << prob << std::endl;
+
+                if (prob > 0.5 || hasNudity) {
+                    std::cout << "Sending request to submit image" << std::endl;
+                }
+            }
+        }
     }
 
     return 0;
